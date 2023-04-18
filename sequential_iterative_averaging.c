@@ -74,8 +74,13 @@ int main(int argc, char const *argv[])
     long end = get_usecs();
     double dur = ((double)(end-start))/1000000;
 
-    printf("Time = %.3f\n",dur);
     validateOutput();
+    printf("Time = %.3f\n",dur);
+    double sum = 0.0;
+    for(int i = 0 ; i < N+2 ; i++){
+        sum += A[i];
+    }
+    printf("Sum of array A is: %f\n", sum);
     free(A);
     free(A_shadow);
     free(myVal); 
