@@ -33,11 +33,12 @@ long min(long a, long b){
 }
 
 
-int main(int argc, char **argv)
+int main(int argc, char **argv) 
 {   
     int P = 1, rank, tag_left = 0, tag_right = 1, tag_sum = 2;
     double *A, *A_shadow, *check, global_sum = 0.0, local_sum = 0.0;
-
+    long start_time, end_time;
+  
     // Initialize MPI
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -50,7 +51,7 @@ int main(int argc, char **argv)
     if(getenv("NI")!=NULL){
         NI = atoi(getenv("NI"));
     }
-    if(getenv("N")!=NULL){
+    if(getenv("P")!=NULL){
         P = atoi(getenv("P"));
     }
 
@@ -67,24 +68,27 @@ int main(int argc, char **argv)
     MPI_Status status;
 
     int batchSize = ceilDiv((long)P);
-    long start = rank * batchSize + 1;
+    long start = (rank * batchSize) + 1;
     long end = min(start + batchSize - 1, N);
 
-    long start_time = get_usecs();
+    if(rank == 0){
+        start_time = get_usecs();
+    }
+    
 
     // Sending edge elements calculated by this rank
     if(rank > 0){
-        MPI_Send(&A[start], 1, MPI_DOUBLE, rank-1, tag_left, MPI_COMM_WORLD);
+        MPI_Send(&A[start], 1, MPI_DOUBLE, (rank-1), tag_left, MPI_COMM_WORLD);
     }
-    if(rank < P-1){
-        MPI_Send(&A[end], 1, MPI_DOUBLE, rank+1, tag_right, MPI_COMM_WORLD);
+    if(rank < (P-1)){
+        MPI_Send(&A[end], 1, MPI_DOUBLE, (rank+1), tag_right, MPI_COMM_WORLD);
     }
 
     if(rank > 0){
-        MPI_Recv(&A[start-1], 1, MPI_DOUBLE, rank-1, tag_left, MPI_COMM_WORLD, &status);
+        MPI_Recv(&A[start-1], 1, MPI_DOUBLE, (rank-1), tag_right, MPI_COMM_WORLD, &status);
     }
-    if(rank < P-1){
-        MPI_Recv(&A[end+1], 1, MPI_DOUBLE, rank+1, tag_right, MPI_COMM_WORLD, &status);
+    if(rank < (P-1)){
+        MPI_Recv(&A[end+1], 1, MPI_DOUBLE, (rank+1), tag_left, MPI_COMM_WORLD, &status);
     }
 
     for (int iter = 0; iter < NI; iter++){
@@ -122,10 +126,12 @@ int main(int argc, char **argv)
         printf("\nSum of array A is: %f\n", global_sum);
     }
 
-    long end_time = get_usecs();
-    double dur = ((double)(end_time - start_time))/1000000;
-
-    printf("Time = %.5f\n",dur);
+    if(rank == 0){
+        end_time = get_usecs();
+        double dur = ((double)(end_time - start_time))/1000000;
+        printf("Time = %.5f\n",dur);
+    }
+    
     
     free(A);
     free(A_shadow);
