@@ -5,81 +5,39 @@
 #include "omp.h"
 #include <mpi.h>
 
-
-long N = 51658240;
-int NI = 30, P = 1, rank, tag = 42;
-double *A, *A_shadow, *check, global_sum = 0.0;
+long N = 25165824;
+int NI = 64;
 
 long get_usecs () {
-
     struct timeval t;
     gettimeofday(&t,NULL);
     return t.tv_sec*1000000 + t.tv_usec;
-
 }
 
-void runParallel(){
-
-    for (int iter = 0; iter < NI; iter++){
-
-        int chunk_size = ((N+2)/P);
-
-        int start = (rank*chunk_size) + 1;
-        int end = (rank+1)*chunk_size;
-        if(rank == P-1){
-            end = N+1;
-        }
-
-
-        MPI_Status status;
-
-        if(rank > 0){
-            MPI_Recv(&A[start-1], 1, MPI_DOUBLE, rank-1, tag, MPI_COMM_WORLD, &status);
-        }
-        if(rank < P-1){
-            MPI_Recv(&A[end+1], 1, MPI_DOUBLE, rank+1, tag, MPI_COMM_WORLD, &status);
-        }
-
-        // #pragma omp parallel for default(none) firstprivate(start, end) shared(A, A_shadow, rank, tag) 
-        for (int j = start; j <= end; j++) {
-            A_shadow[j] = (A[j-1] + A[j+1]) / 2.0;
-            if(j == start && rank > 0){
-                MPI_Send(&A_shadow[start], 1, MPI_DOUBLE, rank-1, tag, MPI_COMM_WORLD);
-            }
-        }
-        if(rank < P-1){
-            MPI_Send(&A_shadow[end], 1, MPI_DOUBLE, rank+1, tag, MPI_COMM_WORLD);
-        }
-        
-        double* temp = A_shadow;
-        A_shadow = A;
-        A = temp;
-
+long ceilDiv(long d) {
+    long m = N / d;
+    if (m * d == N) {
+        return m;
+    } else {
+        return (m + 1);
     }
-
 }
 
-// double arraySum(){
-
-//     double local_sum = 0.0;
-
-//     int start = (rank*chunk_size) + 1;
-//     int end = (rank+1)*chunk;
-//     if(end > N+1){
-//         end = N+1;
-//     }
-
-//     #pragma omp parallel for default(none) firstprivate(start, end) shared(A) reduction(+:sum)
-//     for(int i = start ; i <= end ; i++){
-//         sum += A[i];
-//     }
-
-//     return sum;
-// }
+long min(long a, long b){
+    if(a > b){
+        return b;
+    }
+    else {
+        return a;
+    }
+}
 
 
 int main(int argc, char **argv)
 {   
+    int P = 1, rank, tag_left = 0, tag_right = 1, tag_sum = 2;
+    double *A, *A_shadow, *check, global_sum = 0.0, local_sum = 0.0;
+
     // Initialize MPI
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -105,29 +63,88 @@ int main(int argc, char **argv)
     memset(check, 0, (N+2)*sizeof(double));
 
     A[N+1] = N+1;
+    A_shadow[N+1] = N+1;
+    MPI_Status status;
 
-    long start = get_usecs();
-    runParallel();
-    long end = get_usecs();
-    double dur = ((double)(end-start))/1000000;
+    long chunk_size = ((N+2)/P);
+
+    long start = (rank*chunk_size) + 1;
+    long end = (rank+1)*chunk_size;
+    if(rank == P-1){
+        end = N+1;
+    }
+
+    long start_time = get_usecs();
+
+    // Sending edge elements calculated by this rank
+    if(rank > 0){
+        MPI_Send(&A[start], 1, MPI_DOUBLE, rank-1, tag_left, MPI_COMM_WORLD);
+    }
+    if(rank < P-1){
+        MPI_Send(&A[end], 1, MPI_DOUBLE, rank+1, tag_right, MPI_COMM_WORLD);
+    }
+
+    if(rank > 0){
+        MPI_Recv(&A[start-1], 1, MPI_DOUBLE, rank-1, tag_left, MPI_COMM_WORLD, &status);
+    }
+    if(rank < P-1){
+        MPI_Recv(&A[end+1], 1, MPI_DOUBLE, rank+1, tag_right, MPI_COMM_WORLD, &status);
+    }
+
+    int batchSize = ceilDiv((long)P);
+
+    for (int iter = 0; iter < NI; iter++){
+
+        
+        // for(int i = 0 ; i < P ; i++){
+            long start = rank * batchSize + 1;
+            long end = min(start + batchSize - 1, N);
+            #pragma omp parallel for 
+            for (int j = start; j <= end; j++){
+                A_shadow[j] = (A[j-1] + A[j+1]) / 2.0;
+            }
+
+        // }
+
+        double* temp = A_shadow;
+        A_shadow = A;
+        A = temp;
+
+    }
+
+    // Calculating local sum of the chunk
+    for(int i = start ; i <= end ; i++){
+        local_sum += A[i];
+    }
+
+    // Sending local sum to master rank 0
+    if(rank > 0){
+        int dest = 0;
+        MPI_Send(&local_sum, 1, MPI_DOUBLE, dest, tag_sum, MPI_COMM_WORLD);
+    }
+    // Collecting sums from all processors at rank 0 processor
+    else {
+        global_sum = local_sum;
+        for(int i = 1; i < P ; i++) {
+            int src = i;
+            double recv_sum;
+            MPI_Recv(&recv_sum, 1, MPI_DOUBLE, src, tag_sum, MPI_COMM_WORLD, &status);
+            global_sum += recv_sum; 
+        }
+        printf("\nSum of array A is: %f\n", global_sum);
+    }
+
+    long end_time = get_usecs();
+    double dur = ((double)(end_time - start_time))/1000000;
 
     printf("Time = %.5f\n",dur);
     
-    // start = get_usecs();
-    // double sum = arraySum();
-    // end = get_usecs();
-    // dur = ((double)(end-start))/1000000;
-
-    // printf("\nSum of array A is: %f\n", sum);
-    // printf("Time = %.5f\n",dur);
-
     free(A);
     free(A_shadow);
     free(check); 
 
     // Finalize MPI
     MPI_Finalize();
-
 
     return 0;
 }
