@@ -5,8 +5,8 @@
 #include "omp.h"
 #include <mpi.h>
 
-long N = 25165824;
-int NI = 64;
+long N = 4;
+int NI = 3;
 
 long get_usecs () {
     struct timeval t;
@@ -66,13 +66,16 @@ int main(int argc, char **argv)
     A_shadow[N+1] = N+1;
     MPI_Status status;
 
-    long chunk_size = ((N+2)/P);
+    // long chunk_size = ((N+2)/P);
 
-    long start = (rank*chunk_size) + 1;
-    long end = (rank+1)*chunk_size;
-    if(rank == P-1){
-        end = N+1;
-    }
+    // long start = (rank*chunk_size) + 1;
+    // long end = (rank+1)*chunk_size;
+    // if(rank == P-1){
+    //     end = N+1;
+    // }
+    int batchSize = ceilDiv((long)P);
+    long start = rank * batchSize + 1;
+    long end = min(start + batchSize - 1, N);
 
     long start_time = get_usecs();
 
@@ -91,20 +94,16 @@ int main(int argc, char **argv)
         MPI_Recv(&A[end+1], 1, MPI_DOUBLE, rank+1, tag_right, MPI_COMM_WORLD, &status);
     }
 
-    int batchSize = ceilDiv((long)P);
+    // int batchSize = ceilDiv((long)P);
 
     for (int iter = 0; iter < NI; iter++){
 
-        
-        // for(int i = 0 ; i < P ; i++){
-            long start = rank * batchSize + 1;
-            long end = min(start + batchSize - 1, N);
-            #pragma omp parallel for 
-            for (int j = start; j <= end; j++){
-                A_shadow[j] = (A[j-1] + A[j+1]) / 2.0;
-            }
-
-        // }
+        // long start = rank * batchSize + 1;
+        // long end = min(start + batchSize - 1, N);
+        #pragma omp parallel for 
+        for (int j = start; j <= end; j++){
+            A_shadow[j] = (A[j-1] + A[j+1]) / 2.0;
+        }
 
         double* temp = A_shadow;
         A_shadow = A;

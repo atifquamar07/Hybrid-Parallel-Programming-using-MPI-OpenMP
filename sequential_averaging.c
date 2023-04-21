@@ -3,8 +3,8 @@
 #include<sys/time.h>
 #include <stdlib.h>
 
-long N = 25165824;
-int NI = 64;
+long N = 4;
+int NI = 3;
 double *A, *A_shadow, *myVal;
 
 long get_usecs () {
