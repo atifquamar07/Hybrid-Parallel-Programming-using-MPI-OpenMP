@@ -50,8 +50,7 @@ int main(int argc, char **argv){
         B[i] = (int *)malloc(N * sizeof(int)); 
         C[i] = (int *)malloc(N * sizeof(int));   
     }
-
-    
+           
     if(rank == 0){
         
         for (int i = 0; i < N; ++i) {
@@ -72,23 +71,21 @@ int main(int argc, char **argv){
             }
         }
 
+    }
+
+    int source = 0;
+    for(int i = 0 ; i < N ; i++){
+        MPI_Bcast(A[i], N, MPI_INT, source, MPI_COMM_WORLD);
+    }
+    for(int i = 0 ; i < N ; i++){
+        MPI_Bcast(B[i], N, MPI_INT, source, MPI_COMM_WORLD);
+    }
+
+    if(rank == 0){
+
         long start_time = get_usecs();
 
         if(P > 1){
-
-            for (int dest = 1; dest < P; dest++) {
-                for(int i = 0 ; i < N ; i++){
-                    MPI_Send(&A[i][0], N, MPI_INT, dest, tag_a, MPI_COMM_WORLD);
-                    MPI_Send(&B[i][0], N, MPI_INT, dest, tag_b, MPI_COMM_WORLD);
-                }
-            }
-            // int source = 0;
-           
-            // for(int i = 0 ; i < N ; i++){
-            //     MPI_Bcast(&A[i][0], N, MPI_INT, source, MPI_COMM_WORLD);
-            //     MPI_Bcast(&B[i][0], N, MPI_INT, source, MPI_COMM_WORLD);
-            // }
-            
 
             for(int i = 1 ; i < P ; i++){
                 int start_master, end_master;
@@ -145,7 +142,11 @@ int main(int argc, char **argv){
                     printf("ERROR: Validation Failed!\n");
                     printf("Difference: CHECK[%d][%d] = %d != C[%d][%d] = %d\n", i, j, CHECK[i][j], i, j, C[i][j]);
                     ok = 0;
+                    break;
                 }
+            }
+            if(!ok){
+                break;
             }
         }
         if(ok == 1){
@@ -156,16 +157,9 @@ int main(int argc, char **argv){
         }
 
     }
+    
     if(rank > 0) {
-
-        int from = 0;
-
-        for(int i = 0 ; i < N ; i++){
-            MPI_Recv(&A[i][0], N, MPI_INT, from, tag_a, MPI_COMM_WORLD, &status);
-            MPI_Recv(&B[i][0], N, MPI_INT, from, tag_b, MPI_COMM_WORLD, &status);
-        }
    
-        
         // printf("In rank %d, matrices A and B received are: \n", rank);
         // for (int i = 0; i < N; ++i) {
         //     for (int j = 0; j < N; ++j) {
