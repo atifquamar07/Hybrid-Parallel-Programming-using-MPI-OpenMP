@@ -109,27 +109,14 @@ int main(int argc, char **argv)
         local_sum += A[i];
     }
 
-    // Sending local sum to master rank 0
-    if(rank > 0){
-        int dest = 0;
-        MPI_Send(&local_sum, 1, MPI_DOUBLE, dest, tag_sum, MPI_COMM_WORLD);
-    }
-    // Collecting sums from all processors at rank 0 processor
-    else {
-        global_sum = local_sum;
-        for(int i = 1; i < P ; i++) {
-            int src = i;
-            double recv_sum;
-            MPI_Recv(&recv_sum, 1, MPI_DOUBLE, src, tag_sum, MPI_COMM_WORLD, &status);
-            global_sum += recv_sum; 
-        }
-        printf("\nSum of array A is: %f\n", global_sum);
-    }
+    // COllecting sums from all processors using MPI_Reduce
+    MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if(rank == 0){
         end_time = get_usecs();
         double dur = ((double)(end_time - start_time))/1000000;
         printf("Time = %.5f\n",dur);
+        printf("\nSum of array A is: %f\n", global_sum);
     }
     
     

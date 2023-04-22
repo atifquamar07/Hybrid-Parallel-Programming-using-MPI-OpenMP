@@ -1,4 +1,4 @@
-EXE = omp_averaging sequential_averaging mpi_omp_averaging mm_mpi
+EXE = omp_averaging sequential_averaging mpi_omp_averaging
 
 all: $(EXE)
 

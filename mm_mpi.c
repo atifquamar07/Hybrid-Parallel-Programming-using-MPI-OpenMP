@@ -90,7 +90,7 @@ int main(int argc, char **argv){
                 MPI_Recv(&end_master, 1, MPI_INT, i, tag_end, MPI_COMM_WORLD, &status);
 
                 for (int j = start_master; j <= end_master; j++) {
-                    MPI_Recv(&C[j][0], N, MPI_INT, i, tag_rows, MPI_COMM_WORLD, &status);
+                    MPI_Recv(&C[j][0], N, MPI_INT, i, tag_rows + 2000 + j, MPI_COMM_WORLD, &status);
                 }
             }
 
@@ -191,7 +191,7 @@ int main(int argc, char **argv){
         MPI_Send(&end, 1, MPI_INT, dest, tag_end, MPI_COMM_WORLD);
 
         for (int i = start; i <= end; i++) {
-            MPI_Send(&C[i][0], N, MPI_INT, dest, tag_rows, MPI_COMM_WORLD);
+            MPI_Send(&C[i][0], N, MPI_INT, dest, tag_rows + 2000 + i, MPI_COMM_WORLD);
         }
 
     }
