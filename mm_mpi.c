@@ -50,7 +50,8 @@ int main(int argc, char **argv){
         B[i] = (int *)malloc(N * sizeof(int)); 
         C[i] = (int *)malloc(N * sizeof(int));   
     }
-           
+    
+    // Initializing A and B matrices at master rank
     if(rank == 0){
         
         for (int i = 0; i < N; ++i) {
@@ -65,14 +66,9 @@ int main(int argc, char **argv){
             }
         }
 
-        for (int i = 0; i < N; ++i) {
-            for (int j = 0; j < N; ++j) {
-                C[i][j] = -1;
-            }
-        }
-
     }
 
+    // Broadcasting A and B matrices to all the processors
     int source = 0;
     for(int i = 0 ; i < N ; i++){
         MPI_Bcast(A[i], N, MPI_INT, source, MPI_COMM_WORLD);
@@ -80,6 +76,7 @@ int main(int argc, char **argv){
     for(int i = 0 ; i < N ; i++){
         MPI_Bcast(B[i], N, MPI_INT, source, MPI_COMM_WORLD);
     }
+
 
     if(rank == 0){
 
@@ -117,7 +114,6 @@ int main(int argc, char **argv){
         long end_time = get_usecs();
         double dur = ((double)(end_time - start_time))/1000000;
         
-
 
 
         // Validating output
