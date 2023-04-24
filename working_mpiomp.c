@@ -32,53 +32,11 @@ long min(long a, long b){
     }
 }
 
-double arraySum(double *array){
-
-    double sum = 0.0;
-    for(int i = 0 ; i < N+2 ; i++){
-        sum += array[i];
-    }
-
-    return sum;
-}
-
-int validateOutput(double sum){
-
-    double *A = (double*)malloc((N+2)*sizeof(double));
-    double *A_shadow = (double*)malloc((N+2)*sizeof(double));
-    double *check = (double*)malloc((N+2)*sizeof(double));
-
-    memset(A, 0, (N+2)*sizeof(double));
-    memset(A_shadow, 0, (N+2)*sizeof(double));
-    memset(check, 0, (N+2)*sizeof(double));
-
-    A[N+1] = N+1;
-
-    for (int iter = 0; iter < NI; iter++){
-
-        for (int j = 1; j <= N; j++){
-            check[j] = (A[j-1] + A[j+1]) / 2.0;
-        }
-
-        double* temp = A_shadow;
-        A_shadow = A;
-        A = temp;
-
-    }
-
-    double real_sum = arraySum(A);
-
-    if(abs(real_sum - sum) < 1e20){
-        return 1;
-    }
-    return 0;
-}
-
 
 int main(int argc, char **argv) 
 {   
-    int P = 1, rank, tag_left = 0, tag_right = 1, tag_sum = 2;
-    double *A, *A_shadow, global_sum = 0.0, local_sum = 0.0;
+    int P = 1, rank, threads, tag_left = 0, tag_right = 1, tag_sum = 2;
+    double *A, *A_shadow, *check, global_sum = 0.0, local_sum = 0.0;
     long start_time, end_time;
   
     // Initialize MPI
@@ -96,9 +54,11 @@ int main(int argc, char **argv)
 
     A = (double*)malloc((N+2)*sizeof(double));
     A_shadow = (double*)malloc((N+2)*sizeof(double));
+    check = (double*)malloc((N+2)*sizeof(double));
 
     memset(A, 0, (N+2)*sizeof(double));
     memset(A_shadow, 0, (N+2)*sizeof(double));
+    memset(check, 0, (N+2)*sizeof(double));
 
     A[N+1] = N+1;
     A_shadow[N+1] = N+1;
@@ -113,12 +73,23 @@ int main(int argc, char **argv)
     }
     
 
+    // Sending edge elements calculated by this rank
+    // if(rank > 0){
+    //     MPI_Send(&A[start], 1, MPI_DOUBLE, (rank-1), tag_left, MPI_COMM_WORLD);
+    // }
+    // if(rank < (P-1)){
+    //     MPI_Send(&A[end], 1, MPI_DOUBLE, (rank+1), tag_right, MPI_COMM_WORLD);
+    // }
+
+    // if(rank > 0){
+    //     MPI_Recv(&A[start-1], 1, MPI_DOUBLE, (rank-1), tag_right, MPI_COMM_WORLD, &status);
+    // }
+    // if(rank < (P-1)){
+    //     MPI_Recv(&A[end+1], 1, MPI_DOUBLE, (rank+1), tag_left, MPI_COMM_WORLD, &status);
+    // }
+
     MPI_Request requestSendLeft;
     MPI_Request requestSendRight;
-    MPI_Request requestReceiveLeft;
-    MPI_Request requestReceiveRight;
-    MPI_Status statusReceiveLeft;
-    MPI_Status statusReceiveRight;
 
     
     if(rank > 0){
@@ -127,6 +98,12 @@ int main(int argc, char **argv)
     if(rank < (P-1)){
         MPI_Isend(&A[end], 1, MPI_DOUBLE, (rank+1), tag_right, MPI_COMM_WORLD, &requestSendRight);
     }
+
+    MPI_Request requestReceiveLeft;
+    MPI_Request requestReceiveRight;
+    MPI_Status statusReceiveLeft;
+    MPI_Status statusReceiveRight;
+
     if(rank > 0){
         MPI_Irecv(&A[start-1], 1, MPI_DOUBLE, (rank-1), tag_right, MPI_COMM_WORLD, &requestReceiveLeft);
         MPI_Wait(&requestReceiveLeft, &statusReceiveLeft);
@@ -138,11 +115,19 @@ int main(int argc, char **argv)
 
     for (int iter = 0; iter < NI; iter++){
 
-        #pragma omp parallel for default(none) firstprivate(start, end) shared(A, A_shadow)
+        // if(rank < (P-1)){
+        //     MPI_Isend(&A[end], 1, MPI_DOUBLE, rank+1, end, MPI_COMM_WORLD, &requestSendRight);
+        //     MPI_Irecv(&A[end+1], 1, MPI_DOUBLE, (rank+1), end+1, tag_left, MPI_COMM_WORLD, &requestReceiveRight);
+        //     MPI_Wait(&requestReceiveRight, &statusReceiveRight);
+        // }
+
+        #pragma omp parallel for default(none) firstprivate(start, end) shared(A, A_shadow) num_threads(threads)  
         for (int j = start; j <= end; j++){
             A_shadow[j] = (A[j-1] + A[j+1]) / 2.0;
         }
         
+        
+
         double* temp = A_shadow;
         A_shadow = A;
         A = temp;
@@ -160,25 +145,18 @@ int main(int argc, char **argv)
     if(rank == 0){
         end_time = get_usecs();
         double dur = ((double)(end_time - start_time))/1000000;
-        if(validateOutput(global_sum)){
-            printf("----------------------\n");
-            printf("    TEST SUCCESS\n");
-            printf("----------------------\n");
-            printf("Size of array (N) = %ld\n", N);
-            printf("Processor Count = %d\n", P);
-            printf("Iterations (NI) = %d\n", NI);
-            printf("Sum of array A is: %f\n", global_sum);
-            printf("Time = %.5f\n",dur);
-        }
-        else {
-            printf("ERROR\n");
-        }
-        
+        printf("Size of array (N) = %ld\n", N);
+        printf("Processor Count = %d\n", P);
+        printf("OMP threads count = %d\n", threads);
+        printf("Iterations (NI) = %d\n", NI);
+        printf("Sum of array A is: %f\n", global_sum);
+        printf("Time = %.5f\n",dur);
     }
     
     
     free(A);
     free(A_shadow);
+    free(check); 
 
     // Finalize MPI
     MPI_Finalize();

@@ -12,8 +12,8 @@ long get_usecs () {
     return t.tv_sec*1000000 + t.tv_usec;
 }
 
-int ceilDiv(int d) {
-    int m = N / d;
+long ceilDiv(long d) {
+    long m = N / d;
     if (m * d == N) {
         return m;
     } else {
@@ -21,7 +21,7 @@ int ceilDiv(int d) {
     }
 }
 
-int min(int a, int b){
+long min(long a, long b){
     if(a > b){
         return b;
     }
@@ -50,21 +50,6 @@ int main(int argc, char **argv){
         B[i] = (int *)malloc(N * sizeof(int)); 
         C[i] = (int *)malloc(N * sizeof(int));   
     }
-
-    int batchSize = ceilDiv(P);
-    int start = (rank * batchSize);
-    int end = min(start + batchSize - 1, N-1);
-
-    MPI_Request *requestResult;
-    MPI_Status *statusResult;
-
-    if(rank == 0){
-        requestResult = (MPI_Request *)malloc((N-batchSize) * sizeof(MPI_Request));
-    }
-    if(rank == 0){
-        statusResult = (MPI_Status *)malloc((N-batchSize) * sizeof(MPI_Status));
-    }
-
     
     // Initializing A and B matrices at master rank
     if(rank == 0){
@@ -100,22 +85,21 @@ int main(int argc, char **argv){
         if(P > 1){
 
             for(int i = 1 ; i < P ; i++){
+                int start_master, end_master;
+                MPI_Recv(&start_master, 1, MPI_INT, i, tag_start, MPI_COMM_WORLD, &status);
+                MPI_Recv(&end_master, 1, MPI_INT, i, tag_end, MPI_COMM_WORLD, &status);
 
-                int source = i;
-                int start_receive = i*batchSize;
-                int end_receive = min(start_receive + batchSize - 1, N-1);
-
-                for (int j = start_receive; j <= end_receive; j++) {
-                    // MPI_Recv(&C[j][0], N, MPI_INT, i, tag_rows + 2000 + j, MPI_COMM_WORLD, &status);
-                    MPI_Irecv(C[j], N, MPI_INT, source, tag_rows + j, MPI_COMM_WORLD, &(requestResult[j-batchSize]));
-
+                for (int j = start_master; j <= end_master; j++) {
+                    MPI_Recv(&C[j][0], N, MPI_INT, i, tag_rows + 2000 + j, MPI_COMM_WORLD, &status);
                 }
-                
             }
-            MPI_Waitall(N-batchSize, requestResult, statusResult);
-            
+
         }
         
+
+        int batchSize = ceilDiv((long)P);
+        int start = (rank * batchSize);
+        int end = min(start + batchSize - 1, N-1);
 
         for (int i = start; i <= end; ++i) {
             for (int j = 0; j < N; ++j) {
@@ -126,11 +110,11 @@ int main(int argc, char **argv){
             }
         }
 
-        
 
         long end_time = get_usecs();
         double dur = ((double)(end_time - start_time))/1000000;
         
+
 
         // Validating output
         int **CHECK = (int **)malloc(N * sizeof(int *)); 
@@ -163,7 +147,7 @@ int main(int argc, char **argv){
         }
         if(ok == 1){
             printf("----------------------\n");
-            printf("TEST SUCCESS\n");
+            printf("    TEST SUCCESS\n");
             printf("----------------------\n");
             printf("N = %d\n", N);
             printf("Processor Count: %d\n", P);
@@ -173,9 +157,10 @@ int main(int argc, char **argv){
     }
     
     if(rank > 0) {
-   
 
-        int dest = 0;
+        int batchSize = ceilDiv((long)P);
+        int start = (rank * batchSize) ;
+        int end = min(start + batchSize - 1, N-1);
 
         for (int i = start; i <= end; ++i) {
             for (int j = 0; j < N; ++j) {
@@ -184,19 +169,15 @@ int main(int argc, char **argv){
                     C[i][j] += A[i][k] * B[k][j];
                 }
             }
-            // firing a non-blocking sending call
-            MPI_Request request;
-            MPI_Isend(C[i], N, MPI_INT, dest, tag_rows + i, MPI_COMM_WORLD, &request);
-
         }
 
-        // int dest = 0;
-        // MPI_Send(&start, 1, MPI_INT, dest, tag_start, MPI_COMM_WORLD);
-        // MPI_Send(&end, 1, MPI_INT, dest, tag_end, MPI_COMM_WORLD);
+        int dest = 0;
+        MPI_Send(&start, 1, MPI_INT, dest, tag_start, MPI_COMM_WORLD);
+        MPI_Send(&end, 1, MPI_INT, dest, tag_end, MPI_COMM_WORLD);
 
-        // for (int i = start; i <= end; i++) {
-        //     MPI_Send(&C[i][0], N, MPI_INT, dest, tag_rows + 2000 + i, MPI_COMM_WORLD);
-        // }
+        for (int i = start; i <= end; i++) {
+            MPI_Send(&C[i][0], N, MPI_INT, dest, tag_rows + 2000 + i, MPI_COMM_WORLD);
+        }
 
     }
 
@@ -204,11 +185,8 @@ int main(int argc, char **argv){
     free(A);
     free(B);
     free(C); 
-    if(rank == 0){
-        free(requestResult);
-        free(statusResult);
-    }
     
+
     // Finalize MPI
     MPI_Finalize();
 

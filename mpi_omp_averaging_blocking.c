@@ -78,7 +78,7 @@ int validateOutput(double sum){
 int main(int argc, char **argv) 
 {   
     int P = 1, rank, tag_left = 0, tag_right = 1, tag_sum = 2;
-    double *A, *A_shadow, global_sum = 0.0, local_sum = 0.0;
+    double *A, *A_shadow, *check, global_sum = 0.0, local_sum = 0.0;
     long start_time, end_time;
   
     // Initialize MPI
@@ -93,12 +93,17 @@ int main(int argc, char **argv)
     if(getenv("NI")!=NULL){
         NI = atoi(getenv("NI"));
     }
+    if(getenv("P")!=NULL){
+        P = atoi(getenv("P"));
+    }
 
     A = (double*)malloc((N+2)*sizeof(double));
     A_shadow = (double*)malloc((N+2)*sizeof(double));
+    check = (double*)malloc((N+2)*sizeof(double));
 
     memset(A, 0, (N+2)*sizeof(double));
     memset(A_shadow, 0, (N+2)*sizeof(double));
+    memset(check, 0, (N+2)*sizeof(double));
 
     A[N+1] = N+1;
     A_shadow[N+1] = N+1;
@@ -113,36 +118,28 @@ int main(int argc, char **argv)
     }
     
 
-    MPI_Request requestSendLeft;
-    MPI_Request requestSendRight;
-    MPI_Request requestReceiveLeft;
-    MPI_Request requestReceiveRight;
-    MPI_Status statusReceiveLeft;
-    MPI_Status statusReceiveRight;
+    // Sending edge elements calculated by this rank
+    if(rank > 0){
+        MPI_Send(&A[start], 1, MPI_DOUBLE, (rank-1), tag_left, MPI_COMM_WORLD);
+    }
+    if(rank < (P-1)){
+        MPI_Send(&A[end], 1, MPI_DOUBLE, (rank+1), tag_right, MPI_COMM_WORLD);
+    }
 
-    
     if(rank > 0){
-        MPI_Isend(&A[start], 1, MPI_DOUBLE, rank-1, tag_left, MPI_COMM_WORLD, &requestSendLeft);
+        MPI_Recv(&A[start-1], 1, MPI_DOUBLE, (rank-1), tag_right, MPI_COMM_WORLD, &status);
     }
     if(rank < (P-1)){
-        MPI_Isend(&A[end], 1, MPI_DOUBLE, (rank+1), tag_right, MPI_COMM_WORLD, &requestSendRight);
-    }
-    if(rank > 0){
-        MPI_Irecv(&A[start-1], 1, MPI_DOUBLE, (rank-1), tag_right, MPI_COMM_WORLD, &requestReceiveLeft);
-        MPI_Wait(&requestReceiveLeft, &statusReceiveLeft);
-    }
-    if(rank < (P-1)){
-        MPI_Irecv(&A[end+1], 1, MPI_DOUBLE, (rank+1), tag_left, MPI_COMM_WORLD, &requestReceiveRight);
-        MPI_Wait(&requestReceiveRight, &statusReceiveRight);
+        MPI_Recv(&A[end+1], 1, MPI_DOUBLE, (rank+1), tag_left, MPI_COMM_WORLD, &status);
     }
 
     for (int iter = 0; iter < NI; iter++){
 
-        #pragma omp parallel for default(none) firstprivate(start, end) shared(A, A_shadow)
+        #pragma omp parallel for default(none) firstprivate(start, end) shared(A, A_shadow) 
         for (int j = start; j <= end; j++){
             A_shadow[j] = (A[j-1] + A[j+1]) / 2.0;
         }
-        
+
         double* temp = A_shadow;
         A_shadow = A;
         A = temp;
@@ -154,7 +151,7 @@ int main(int argc, char **argv)
         local_sum += A[i];
     }
 
-    // Collecting sums from all processors using MPI_Reduce
+    // COllecting sums from all processors using MPI_Reduce
     MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if(rank == 0){
@@ -179,10 +176,10 @@ int main(int argc, char **argv)
     
     free(A);
     free(A_shadow);
+    free(check); 
 
     // Finalize MPI
     MPI_Finalize();
 
     return 0;
 }
-

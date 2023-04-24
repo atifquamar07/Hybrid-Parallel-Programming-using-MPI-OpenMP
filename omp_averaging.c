@@ -5,8 +5,8 @@
 #include "omp.h"
 
 
-long N = 51658240;
-int NI = 30, P = 1, rank;
+long N = 25165824;
+int NI = 64, P = 1, rank;
 double *A, *A_shadow, *check;
 
 long get_usecs () {
